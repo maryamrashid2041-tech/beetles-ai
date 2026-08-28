@@ -142,7 +142,40 @@ with col_p3:
     st.warning("**🏢 Newsroom**\n\n$100/mo - Team Access & API")
 
 st.markdown("---")
+# ==========================================
+# HIGH-VISIBILITY LEAD CAPTURE (under pricing)
+# ==========================================
+st.markdown("""
+<div style="background: linear-gradient(135deg, #0f172a, #1e293b); padding: 20px; border-radius: 12px; border: 1px solid #334155; margin-bottom: 25px;">
+    <h3 style="color: #4ade80; margin: 0 0 8px 0; text-align: center;">71 journalists & researchers have already checked Beetles AI</h3>
+    <p style="color: #94a3b8; text-align: center; margin: 0 0 15px 0;">Want a free forensic report on a real file? Drop it here — we reply in under 2 hours.</p>
+</div>
+""", unsafe_allow_html=True)
 
+with st.form(key="quick_audit_form", clear_on_submit=True):
+    col_a, col_b = st.columns([2, 1])
+    with col_a:
+        quick_email = st.text_input("Your work email *", placeholder="reporter@newsroom.com", label_visibility="collapsed")
+    with col_b:
+        quick_submit = st.form_submit_button("Request Free Audit →", type="primary", use_container_width=True)
+    
+    quick_msg = st.text_area("Paste Google Drive / Dropbox link or short message", placeholder="Link to audio/image or tell us what you need verified...", label_visibility="collapsed", height=80)
+    
+    if quick_submit:
+        if not quick_email or "@" not in quick_email:
+            st.error("Please enter a valid email.")
+        else:
+            # Re-use the same function you already have
+            success = send_lead_to_email(
+                user_email=quick_email,
+                name="",
+                newsroom="",
+                message=quick_msg if quick_msg else "Quick audit request from homepage"
+            )
+            if success:
+                st.success("✅ Request received! We’ll email you within 2 hours.")
+            else:
+                st.success("✅ Got it! We’ll be in touch shortly.")
 # ==========================================
 # 4. TABBED WORKSPACE (IMAGE + VOICE)
 # ==========================================
