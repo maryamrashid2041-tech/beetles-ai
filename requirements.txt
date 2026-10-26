@@ -1,9 +1,9 @@
-streamlit==1.32.0
-pillow==10.2.0
+streamlit
+pillow
 opencv-python-headless
 numpy
 cryptography
 google-generativeai
-requests==2.31.0
-exifread==3.0.0
-reportlab==4.0.9
+requests
+exifread
+reportlab
