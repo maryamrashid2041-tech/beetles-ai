@@ -294,12 +294,12 @@ with st.sidebar:
     st.markdown('<span class="badge">Forensic Truth • v2.1</span>', unsafe_allow_html=True)
     st.markdown("---")
 
-    default_key = os.getenv("GEMINI_API_KEY", "")
+    default_key = st.secrets.get("GEMINI_API_KEY", os.getenv("GEMINI_API_KEY", ""))
     gemini_api_key = st.text_input(
         "Google Gemini API Key",
         value=default_key,
         type="password",
-        help="Stored only in memory for this session. Or set env var GEMINI_API_KEY.",
+        help="Pre-configured via system vault. You can also supply your own.",
     )
 
     st.markdown("#### Privacy")
