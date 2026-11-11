@@ -78,4 +78,46 @@ def compute_weighted_consensus(ela_score, fft_score, gemini_score=None):
     
     total_score = round(min(max(total_score, 0.0), 100.0), 1)
     verdict = "High Likelihood of Authenticity" if total_score < 35 else "Inconclusive" if total_score < 65 else "High Likelihood of Manipulation"
-    return {"consensus_score": total_score, "uncertainty_margin": uncertainty_margin, "verdict": verdict}
+    return {"consensus_score": total_score, "uncertainty_margin": uncertainty_margin, "verdict": verdict}from PIL import Image, ExifTags
+
+def analyze_metadata_signatures(image: Image.Image) -> dict:
+    """
+    Zero-cost metadata inspection: Checks EXIF tags and PNG chunk text
+    for known AI generator markers, editing software, or C2PA headers.
+    """
+    flags = []
+    is_suspicious = False
+    detected_software = "Clean / Stripped Metadata"
+
+    # 1. Inspect EXIF Data
+    try:
+        exif_data = image._getexif()
+        if exif_data:
+            for tag_id, value in exif_data.items():
+                tag_name = ExifTags.TAGS.get(tag_id, tag_id)
+                val_str = str(value).lower()
+                if tag_name in ['Software', 'ProcessingSoftware', 'UserComment', 'ImageDescription']:
+                    if any(s in val_str for s in ['dall-e', 'midjourney', 'stable diffusion', 'photoshop', 'gimp', 'c2pa', 'canva']):
+                        flags.append(f"Metadata tag detected: {value}")
+                        is_suspicious = True
+                        detected_software = str(value)
+    except Exception:
+        pass
+
+    # 2. Inspect PNG info chunks (common in AI generations)
+    if hasattr(image, 'info') and image.info:
+        for key, val in image.info.items():
+            combined = f"{key} {val}".lower()
+            if any(s in combined for s in ['dall-e', 'parameters', 'prompt', 'stable diffusion', 'c2pa', 'adobe']):
+                flags.append(f"PNG info chunk found: {key}")
+                is_suspicious = True
+                if detected_software == "Clean / Stripped Metadata":
+                    detected_software = f"PNG Chunk ({key})"
+
+    score = 85.0 if is_suspicious else 20.0
+
+    return {
+        "metadata_score": score,
+        "flags": flags if flags else ["No AI metadata footprints found"],
+        "software": detected_software
+    }
