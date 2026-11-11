@@ -18,12 +18,7 @@ from typing import Any, Dict, Optional
 
 import streamlit as st
 
-from forensic_engine import (
-    perform_ela,
-    analyze_fft,
-    analyze_multimodal_gemini,
-    compute_weighted_consensus,
-)
+from forensic_engine import perform_ela, analyze_fft, analyze_multimodal_gemini, compute_weighted_consensus, analyze_metadata_signatures
 from privacy_vault import PrivacyVault, redact_report
 
 
@@ -418,6 +413,10 @@ tab_img, tab_audio, tab_method = st.tabs(
 # Tab 1: Image Forensics
 # -----------------------------
 
+# -----------------------------
+# Tab 1: Image Forensics
+# -----------------------------
+
 with tab_img:
     st.subheader("Image Verification")
 
@@ -441,16 +440,39 @@ with tab_img:
         st.session_state["gemini_img_report"] = None
         st.session_state["ela_score"] = None
         st.session_state["fft_score"] = None
+        st.session_state["metadata_res"] = None
+        st.session_state["ela_img"] = None
+        st.session_state["fft_heat"] = None
 
     if img_bytes:
+        import io
+        from PIL import Image
+
         mime_type = _safe_mime(uploaded_img, "image/jpeg")
+        
+        # 1. Open PIL image safely for metadata
+        try:
+            image_obj = Image.open(io.BytesIO(img_bytes))
+        except Exception:
+            image_obj = None
 
-        # Run base signal extraction
-        fft_heat, fft_score = analyze_fft(img_bytes)
-        ela_img, ela_score = perform_ela(img_bytes)
+        # 2. Run signals and save to session state
+        if st.session_state.get("ela_score") is None:
+            fft_heat, fft_score = analyze_fft(img_bytes)
+            ela_img, ela_score = perform_ela(img_bytes)
+            metadata_res = analyze_metadata_signatures(image_obj) if image_obj else {"software": "Unknown", "flags": ["Could not parse EXIF"]}
 
-        st.session_state["ela_score"] = ela_score
-        st.session_state["fft_score"] = fft_score
+            st.session_state["ela_score"] = ela_score
+            st.session_state["fft_score"] = fft_score
+            st.session_state["metadata_res"] = metadata_res
+            st.session_state["ela_img"] = ela_img
+            st.session_state["fft_heat"] = fft_heat
+        else:
+            ela_score = st.session_state.get("ela_score")
+            fft_score = st.session_state.get("fft_score")
+            metadata_res = st.session_state.get("metadata_res")
+            ela_img = st.session_state.get("ela_img")
+            fft_heat = st.session_state.get("fft_heat")
 
         # Display images
         c1, c2, c3 = st.columns(3)
@@ -470,6 +492,13 @@ with tab_img:
         m1.metric("Image Consistency", _fmt_pct(ela_score))
         m2.metric("Digital Patterns", _fmt_pct(fft_score))
         m3.metric("AI Analysis", _fmt_pct(gemini_score_display))
+
+        # --- METADATA DISPLAY BLOCK ---
+        if metadata_res:
+            with st.expander("🔍 Metadata & Provenance Footprints", expanded=True):
+                st.write(f"**Primary Marker / Software:** {metadata_res.get('software', 'Clean')}")
+                for flag in metadata_res.get('flags', []):
+                    st.info(f"• {flag}")
 
         st.markdown("---")
 
@@ -532,7 +561,6 @@ with tab_img:
                 gemini_summary=gem_summary,
             )
             st.text_area("Copy & forward on WhatsApp", value=card, height=280)
-
 
 # -----------------------------
 # Tab 2: Voice Clone Forensics
