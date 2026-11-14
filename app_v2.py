@@ -1,7 +1,7 @@
 """
-Beetles AI - Deepfake & Voice Clone Forensics (Streamlit Frontend) v2.2
+Beetles AI - Deepfake & Voice Clone Forensics (Streamlit Frontend) v2.3
 Dermestid-branded • Staged Beetle Progress • Professional Privacy Mode
-Jargon-free UI for journalists, lawyers & media companies
+Arabic-Aware Forensic Layer • Jargon-free UI for journalists, lawyers & media
 
 Run:
   streamlit run app_v2.py
@@ -18,7 +18,15 @@ from typing import Any, Dict, Optional
 
 import streamlit as st
 
-from forensic_engine import perform_ela, analyze_fft, analyze_multimodal_gemini, compute_weighted_consensus, analyze_metadata_signatures
+from forensic_engine import (
+    perform_ela,
+    analyze_fft,
+    analyze_multimodal_gemini,
+    compute_weighted_consensus,
+    analyze_metadata_signatures,
+    analyze_arabic_forensics,          # ▶ ARABIC
+    update_consensus_with_arabic,       # ▶ ARABIC
+)
 from privacy_vault import PrivacyVault, redact_report
 
 
@@ -196,6 +204,40 @@ def _gemini_to_human(score01: Optional[float]) -> str:
         return "AI generation likely"
 
 
+# ▶ ARABIC — Verdict translation map
+ARABIC_VERDICT_MAP = {
+    "High likelihood of AI manipulation": "احتمالية عالية للتلاعب بالذكاء الاصطناعي",
+    "Moderate likelihood of AI manipulation": "احتمالية متوسطة للتلاعب بالذكاء الاصطناعي",
+    "Inconclusive / mixed signals": "غير حاسم / إشارات مختلطة",
+    "Moderate likelihood of authenticity": "احتمالية متوسطة للأصالة",
+    "High likelihood of authenticity": "احتمالية عالية للأصالة",
+    "High likelihood of AI generation": "احتمالية عالية للتوليد بالذكاء الاصطناعي",
+    "Inconclusive — manual review recommended": "غير حاسم — يُنصح بالمراجعة اليدوية",
+}
+
+# ▶ ARABIC — Signal label translations
+ARABIC_SIGNAL_LABELS = {
+    "Image Consistency": "اتساق الصورة",
+    "Digital Patterns": "الأنماط الرقمية",
+    "AI Analysis": "تحليل الذكاء الاصطناعي",
+    "Arabic Text Forensics": "تحليل النصوص العربية",
+}
+
+# ▶ ARABIC — Manipulation type translations
+ARABIC_MANIP_MAP = {
+    "none": "لا يوجد",
+    "text_overlay": "طبقة نصية مزيفة",
+    "template_forgery": "تزوير قالب",
+    "deepfake_subtitle": "ترجمة مزيفة بالذكاء الاصطناعي",
+    "synthetic_document": "مستند مزيف",
+}
+
+
+def _arabic_verdict(text: str) -> str:
+    """▶ ARABIC — Return Arabic translation or original if not found."""
+    return ARABIC_VERDICT_MAP.get(text, text)
+
+
 def _report_verdict(final_score: float):
     s = _clamp01(final_score)
     if s < 0.30:
@@ -214,6 +256,8 @@ def _render_report_card(
     fft_score: Optional[float],
     gemini_score: Optional[float],
     modality: str = "image",
+    arabic_results: Optional[Dict[str, Any]] = None,  # ▶ ARABIC
+    lang: str = "en",                                  # ▶ ARABIC
 ) -> None:
     verdict_text, verdict_css, verdict_short = _report_verdict(final_score)
     ela_label = _ela_to_human(ela_score)
@@ -223,27 +267,92 @@ def _render_report_card(
     unc_pct = round(_clamp01(uncertainty) * 100, 1)
     modality_word = "image" if modality == "image" else "recording"
 
+    # ▶ ARABIC — Translate verdict if Arabic selected
+    display_verdict = _arabic_verdict(verdict_text) if lang == "ar" else verdict_text
+
+    # ▶ ARABIC — Build Arabic forensics section
+    arabic_section = ""
+    if arabic_results and arabic_results.get("arabic_text_detected"):
+        ar_anomalies = arabic_results.get("arabic_anomalies_found", [])
+        ar_type = arabic_results.get("arabic_manipulation_type", "none")
+        ar_conf = arabic_results.get("arabic_confidence_score", 0)
+        ar_notes = arabic_results.get("arabic_detail_notes", "")
+
+        if lang == "ar":
+            ar_type_display = ARABIC_MANIP_MAP.get(ar_type, ar_type)
+            arabic_section = f"""
+            <hr style="border-color:rgba(255,255,255,0.12);">
+            <p><strong>🔤 تحليل النصوص العربية:</strong></p>
+            <ul style="line-height:1.8;">
+                <li>نوع التلاعب: <strong>{ar_type_display}</strong></li>
+                <li>نسبة الثقة: <strong>{ar_conf}%</strong></li>
+                <li>عدد التشوهات: <strong>{len(ar_anomalies)}</strong></li>
+            </ul>
+            """
+            if ar_anomalies:
+                items = "".join(f"<li>{a}</li>" for a in ar_anomalies[:5])
+                arabic_section += f"<ul style='line-height:1.8;'>{items}</ul>"
+        else:
+            ar_type_display = ar_type.replace("_", " ").title()
+            arabic_section = f"""
+            <hr style="border-color:rgba(255,255,255,0.12);">
+            <p><strong>🔤 Arabic Text Forensics:</strong></p>
+            <ul style="line-height:1.8;">
+                <li>Manipulation Type: <strong>{ar_type_display}</strong></li>
+                <li>Confidence: <strong>{ar_conf}%</strong></li>
+                <li>Anomalies Found: <strong>{len(ar_anomalies)}</strong></li>
+            </ul>
+            """
+            if ar_anomalies:
+                items = "".join(f"<li>{a}</li>" for a in ar_anomalies[:5])
+                arabic_section += f"<ul style='line-height:1.8;'>{items}</ul>"
+
+    # ▶ ARABIC — Signal labels
+    if lang == "ar":
+        ela_lbl = ARABIC_SIGNAL_LABELS["Image Consistency"]
+        fft_lbl = ARABIC_SIGNAL_LABELS["Digital Patterns"]
+        gem_lbl = ARABIC_SIGNAL_LABELS["AI Analysis"]
+        title_text = "🪲 تقرير التحقق من BEETLES AI"
+        verdict_lbl = "📌 الحكم العام"
+        prob_lbl = "📊 احتمال الذكاء الاصطناعي"
+        checks_lbl = "🔍 ما تم فحصه"
+        summary_lbl = "📝 ملخص للاستشهاد"
+        privacy_lbl = "🔒 الخصوصية: تم حذف ملفك نهائيًا. لا نخزن ملفاتك أبدًا."
+        margin_word = "بهامش"
+    else:
+        ela_lbl = "Image Consistency"
+        fft_lbl = "Digital Patterns"
+        gem_lbl = "AI Analysis"
+        title_text = "🪲 BEETLES AI VERIFICATION REPORT"
+        verdict_lbl = "📌 Overall Verdict"
+        prob_lbl = "📊 AI Probability"
+        checks_lbl = "🔍 What we checked"
+        summary_lbl = "📝 Summary for citation"
+        privacy_lbl = "🔒 Privacy: Your file has been permanently deleted. We never store your uploads."
+        margin_word = "with a margin of"
+
     html = f"""
     <div class="report-card">
-        <h3 style="margin-top:0;">🪲 BEETLES AI VERIFICATION REPORT</h3>
-        <p><strong>📌 Overall Verdict:</strong> <span class="{verdict_css}">{verdict_text}</span></p>
-        <p><strong>📊 AI Probability:</strong> {ai_pct}% (with a margin of {unc_pct}%)</p>
+        <h3 style="margin-top:0;">{title_text}</h3>
+        <p><strong>{verdict_lbl}:</strong> <span class="{verdict_css}">{display_verdict}</span></p>
+        <p><strong>{prob_lbl}:</strong> {ai_pct}% ({margin_word} {unc_pct}%)</p>
         <hr style="border-color:rgba(255,255,255,0.12);">
-        <p><strong>🔍 What we checked:</strong></p>
+        <p><strong>{checks_lbl}:</strong></p>
         <ul style="line-height:1.8;">
-            <li>Image Consistency: <strong>{ela_label}</strong></li>
-            <li>Digital Patterns: <strong>{fft_label}</strong></li>
-            <li>AI Analysis: <strong>{gem_label}</strong></li>
+            <li>{ela_lbl}: <strong>{ela_label}</strong></li>
+            <li>{fft_lbl}: <strong>{fft_label}</strong></li>
+            <li>{gem_lbl}: <strong>{gem_label}</strong></li>
         </ul>
+        {arabic_section}
         <hr style="border-color:rgba(255,255,255,0.12);">
-        <p><strong>📝 Summary for citation:</strong></p>
+        <p><strong>{summary_lbl}:</strong></p>
         <p style="background:rgba(0,0,0,0.3); padding:12px; border-radius:8px; font-style:italic; line-height:1.5;">
             "Independently verified by Beetles AI — multi-layer analysis indicates
             this {modality_word} is {verdict_short} ({ai_pct}% AI probability).
             Full methodology: beetles-forensics.streamlit.app/methodology"
         </p>
         <p style="color:rgba(255,255,255,0.55); font-size:0.9em;">
-            🔒 Privacy: Your file has been permanently deleted. We never store your uploads.
+            {privacy_lbl}
         </p>
     </div>
     """
@@ -265,6 +374,7 @@ def _build_whatsapp_text_card(
     consensus: Dict[str, Any],
     components: Dict[str, Any],
     gemini_summary: Optional[str] = None,
+    arabic_results: Optional[Dict[str, Any]] = None,  # ▶ ARABIC
 ) -> str:
     final_score = float(consensus.get("final_score", 0.5) or 0.5)
     uncertainty = float(consensus.get("uncertainty_margin", 0.0) or 0.0)
@@ -289,6 +399,19 @@ def _build_whatsapp_text_card(
         f"• Digital Patterns: {_fft_to_human(fft)}",
         f"• AI Analysis: {_gemini_to_human(gem)}",
     ]
+
+    # ▶ ARABIC — Add Arabic findings to WhatsApp card
+    if arabic_results and arabic_results.get("arabic_text_detected"):
+        ar_type = arabic_results.get("arabic_manipulation_type", "none")
+        ar_conf = arabic_results.get("arabic_confidence_score", 0)
+        ar_count = len(arabic_results.get("arabic_anomalies_found", []))
+        lines += [
+            "",
+            "*Arabic Text Forensics:*",
+            f"• Manipulation Type: {ar_type.replace('_', ' ').title()}",
+            f"• Confidence: {ar_conf}%",
+            f"• Anomalies: {ar_count}",
+        ]
 
     if gemini_summary:
         summary = str(gemini_summary).strip()
@@ -341,7 +464,16 @@ def _render_findings(findings: Any) -> None:
 
 with st.sidebar:
     st.markdown("### 🪲 Beetles AI")
-    st.markdown('<span class="badge">Forensic Truth • v2.2</span>', unsafe_allow_html=True)
+    st.markdown('<span class="badge">Forensic Truth • v2.3</span>', unsafe_allow_html=True)  # ▶ ARABIC version bump
+    st.markdown("---")
+
+    # ▶ ARABIC — Language toggle
+    lang_choice = st.selectbox(
+        "Language / اللغة",
+        options=["English", "العربية"],
+        index=0,
+    )
+    selected_lang = "ar" if lang_choice == "العربية" else "en"
     st.markdown("---")
 
     default_key = ""
@@ -390,7 +522,7 @@ with st.sidebar:
 # -----------------------------
 
 st.title("🪲 BEETLES AI")
-st.caption("Multi-Layer Verification • Emerging Markets First")
+st.caption("Multi-Layer Verification • Emerging Markets First • Arabic-Aware 🌍")  # ▶ ARABIC
 
 st.markdown(
     """
@@ -408,10 +540,6 @@ tab_img, tab_audio, tab_method = st.tabs(
     ["📸 Image Forensics", "🎙️ Voice Clone Forensics", "🔬 Methodology"]
 )
 
-
-# -----------------------------
-# Tab 1: Image Forensics
-# -----------------------------
 
 # -----------------------------
 # Tab 1: Image Forensics
@@ -443,6 +571,7 @@ with tab_img:
         st.session_state["metadata_res"] = None
         st.session_state["ela_img"] = None
         st.session_state["fft_heat"] = None
+        st.session_state["arabic_results"] = None  # ▶ ARABIC
 
     if img_bytes:
         import io
@@ -487,11 +616,20 @@ with tab_img:
             if fft_heat: st.image(fft_heat, use_container_width=True)
 
         gemini_score_display = st.session_state.get("gemini_img_score")
+        arabic_results_display = st.session_state.get("arabic_results")  # ▶ ARABIC
 
         m1, m2, m3 = st.columns(3)
         m1.metric("Image Consistency", _fmt_pct(ela_score))
         m2.metric("Digital Patterns", _fmt_pct(fft_score))
         m3.metric("AI Analysis", _fmt_pct(gemini_score_display))
+
+        # ▶ ARABIC — Arabic forensics metric
+        if arabic_results_display and arabic_results_display.get("arabic_text_detected"):
+            ar_conf = arabic_results_display.get("arabic_confidence_score", 0)
+            st.metric(
+                "Arabic Text Forensics" if selected_lang == "en" else "تحليل النصوص العربية",
+                f"{ar_conf}%",
+            )
 
         # --- METADATA DISPLAY BLOCK ---
         if metadata_res:
@@ -516,14 +654,50 @@ with tab_img:
                         )
                         st.session_state["gemini_img_score"] = score
                         st.session_state["gemini_img_report"] = report
+
+                        # ▶ ARABIC — Run Arabic forensic analysis
+                        if image_obj is not None:
+                            st.write("🔤 Scanning for Arabic text artifacts...")
+                            try:
+                                ar_res = analyze_arabic_forensics(
+                                    image=image_obj,
+                                    api_key=gemini_api_key.strip(),
+                                )
+                                st.session_state["arabic_results"] = ar_res
+                                if ar_res.get("arabic_text_detected"):
+                                    st.write(f"✅ Arabic text detected — {len(ar_res.get('arabic_anomalies_found', []))} anomalies found")
+                                else:
+                                    st.write("ℹ️ No Arabic text detected — layer skipped")
+                            except Exception as ar_err:
+                                st.warning(f"Arabic analysis skipped: {ar_err}")
+                                st.session_state["arabic_results"] = None
+                        else:
+                            st.session_state["arabic_results"] = None
+
                     except Exception as e:
                         st.error(f"AI analysis error: {e}")
                 st.rerun()
 
         gemini_img_score = st.session_state.get("gemini_img_score")
         gemini_img_report = st.session_state.get("gemini_img_report")
+        arabic_results = st.session_state.get("arabic_results")  # ▶ ARABIC
 
         consensus = compute_weighted_consensus(ela_score, fft_score, gemini_img_score)
+
+        # ▶ ARABIC — Merge Arabic into consensus
+        if arabic_results and arabic_results.get("arabic_text_detected"):
+            arabic_consensus = update_consensus_with_arabic(
+                existing_scores={
+                    "ela": float(ela_score or 0) * 100,
+                    "fft": float(fft_score or 0) * 100,
+                    "gemini": float(gemini_img_score or 0) * 100,
+                },
+                arabic_results=arabic_results,
+            )
+            # Override consensus with Arabic-enhanced scores
+            consensus["final_score"] = arabic_consensus["combined_score"] / 100.0
+            consensus["uncertainty_margin"] = arabic_consensus["confidence_margin"] / 100.0
+
         final_score = float(consensus.get("final_score", 0.5) or 0.5)
         uncertainty = float(consensus.get("uncertainty_margin", 0.0) or 0.0)
 
@@ -535,6 +709,8 @@ with tab_img:
             fft_score=fft_score,
             gemini_score=gemini_img_score,
             modality="image",
+            arabic_results=arabic_results,  # ▶ ARABIC
+            lang=selected_lang,              # ▶ ARABIC
         )
 
         st.progress(int(round(_clamp01(final_score) * 100)))
@@ -545,6 +721,31 @@ with tab_img:
             if summary:
                 st.info(summary)
             _render_findings(gemini_img_report.get("findings", []))
+
+        # ▶ ARABIC — Display Arabic forensic details
+        if arabic_results and arabic_results.get("arabic_text_detected"):
+            st.markdown("### 🔤 Arabic Text Forensics" if selected_lang == "en" else "### 🔤 تحليل النصوص العربية")
+            ar_anomalies = arabic_results.get("arabic_anomalies_found", [])
+            ar_type = arabic_results.get("arabic_manipulation_type", "none")
+            ar_conf = arabic_results.get("arabic_confidence_score", 0)
+            ar_notes = arabic_results.get("arabic_detail_notes", "")
+
+            col_a, col_b = st.columns(2)
+            col_a.metric(
+                "Confidence" if selected_lang == "en" else "نسبة الثقة",
+                f"{ar_conf}%",
+            )
+            col_b.metric(
+                "Anomalies" if selected_lang == "en" else "التشوهات",
+                str(len(ar_anomalies)),
+            )
+
+            if ar_anomalies:
+                for idx, anomaly in enumerate(ar_anomalies, 1):
+                    st.warning(f"{idx}. {anomaly}")
+
+            if ar_notes:
+                st.caption(ar_notes)
 
         st.markdown("---")
         if st.button("📲 Generate Forwardable Report Card", use_container_width=True):
@@ -559,6 +760,7 @@ with tab_img:
                 consensus=consensus,
                 components=consensus.get("components", {}),
                 gemini_summary=gem_summary,
+                arabic_results=arabic_results,  # ▶ ARABIC
             )
             st.text_area("Copy & forward on WhatsApp", value=card, height=280)
 
@@ -613,6 +815,7 @@ with tab_audio:
             fft_score=None,
             gemini_score=gemini_audio_score,
             modality="audio",
+            lang=selected_lang,  # ▶ ARABIC
         )
 
 
@@ -633,7 +836,16 @@ with tab_method:
         **AI Analysis (Gemini Multimodal)**
         Analyzes high-level semantic anomalies, anatomical errors, and lighting logic.
 
+        **Arabic Text Forensics (Gemini Arabic-Aware Layer)**
+        Detects Arabic character rendering errors, RTL layout violations, tashkeel
+        anomalies, font inconsistencies, and fake Arabic social media templates.
+        This layer activates automatically when Arabic script is detected in the image.
+        Competitors like Hive and Reality Defender do not support Arabic — this is
+        our monopoly wedge for 400M+ Arabic speakers in the MENA region.
+
         **Overall Verdict (Weighted Consensus)**
         Combines all signals with calibrated uncertainty ranges.
+        When Arabic text is present, the Arabic forensic score is incorporated
+        as a fourth signal alongside ELA, FFT, and English Gemini analysis.
         """
     )
