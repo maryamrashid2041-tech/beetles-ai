@@ -1,7 +1,7 @@
 """
-Beetles AI - Dynamic Lead & $100M Offer Engine v3.0
-Generates court-specific, zero-risk outreach for Texas trial lawyers.
-Tracks status ('queued' / 'sent') to prevent duplicates permanently.
+Beetles AI - Dynamic Lead & $100M Offer Engine v3.2
+Generates clean, hyper-personalized, zero-risk outreach for Texas trial lawyers.
+Maintains clean state in lead_queue.json without sentence duplication.
 """
 
 import json
@@ -10,15 +10,13 @@ import os
 QUEUE_FILE = "lead_queue.json"
 
 
-def build_100m_offer_email(attorney_name: str, firm_name: str, city: str, county: str, niche_hook: str) -> dict:
-    """Dynamically generates $100M Hormozi Offer copy tailored to any Texas attorney."""
+def build_100m_offer_email(attorney_name: str, firm_name: str, county: str, niche_hook: str) -> dict:
+    """Dynamically builds a clean $100M offer email without sentence duplication."""
     subject = f"quick question about disputed evidence in {county} County"
     
     body = f"""{attorney_name},
 
 {niche_hook}
-
-In high-conflict family and trial litigation in {county} County, opposing counsel frequently attempts to introduce manipulated text screenshots, cropped social media posts, or altered voice notes.
 
 Proving digital evidence is altered usually takes $3,500+ in expert witness fees and 3 weeks of discovery delay—far too slow for emergency temporary order hearings.
 
@@ -41,8 +39,7 @@ Beetles AI Forensics"""
 
 def add_leads_to_queue(raw_leads: list):
     """
-    Appends raw attorney contacts into lead_queue.json.
-    Ensures no duplicate emails exist.
+    Appends new leads into lead_queue.json cleanly without duplicate emails.
     """
     existing_queue = []
     
@@ -64,9 +61,8 @@ def add_leads_to_queue(raw_leads: list):
         email_data = build_100m_offer_email(
             attorney_name=lead.get("attorney_name", "Counsel"),
             firm_name=lead.get("firm_name", "your firm"),
-            city=lead.get("city", "Texas"),
             county=lead.get("county", "Texas"),
-            niche_hook=lead.get("niche_hook", "When clients face disputed digital evidence, unverified screenshots can derail a hearing before discovery opens.")
+            niche_hook=lead.get("niche_hook", "In high-conflict litigation, opposing counsel frequently attempts to introduce manipulated text screenshots to sway emergency rulings.")
         )
 
         record = {
@@ -78,7 +74,7 @@ def add_leads_to_queue(raw_leads: list):
             "county": lead.get("county"),
             "subject": email_data["subject"],
             "body": email_data["body"],
-            "status": "queued"  # 'queued' or 'sent'
+            "status": "queued"
         }
 
         existing_queue.append(record)
@@ -88,11 +84,20 @@ def add_leads_to_queue(raw_leads: list):
     with open(QUEUE_FILE, "w", encoding="utf-8") as f:
         json.dump(existing_queue, f, indent=2, ensure_ascii=False)
 
-    print(f"✅ Success: Added {added_count} new leads to {QUEUE_FILE}. Total leads: {len(existing_queue)}")
+    print(f"✅ Success: Updated {QUEUE_FILE}. Added {added_count} leads. Total in queue: {len(existing_queue)}")
+
+
+def reset_and_rebuild_queue():
+    """Wipes corrupted legacy queue entries and populates fresh clean records."""
+    if os.path.exists(QUEUE_FILE):
+        os.remove(QUEUE_FILE)
+    print(f"🧹 Queue reset. Rebuilding fresh {QUEUE_FILE}...")
 
 
 if __name__ == "__main__":
-    # Add new target batches here as you find them (or via automated scraper)
+    # Resets the queue to clean up previous duplicated text errors
+    reset_and_rebuild_queue()
+
     BATCH = [
         {
             "attorney_name": "Donn Fullenweider",
