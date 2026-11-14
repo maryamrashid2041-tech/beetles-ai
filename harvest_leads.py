@@ -1,46 +1,123 @@
 """
-Beetles AI - Lead Harvester & Drafter
-Runs via GitHub Actions to queue cold leads.
+Beetles AI - Dynamic Lead & $100M Offer Engine v3.0
+Generates court-specific, zero-risk outreach for Texas trial lawyers.
+Tracks status ('queued' / 'sent') to prevent duplicates permanently.
 """
 
 import json
 import os
 
-NEW_LEADS = [
-    {
-        "name": "Shannon L. Strong",
-        "email": "shannonstronglawoffice@gmail.com",
-        "hook": "CASA background in Travis County",
-        "subject": "quick question about disputed screenshots in Travis County",
-        "body": "Shannon,\n\nWith your CASA background in Travis County, you know how dangerous it is when an opposing party submits a doctored text screenshot during a temporary order hearing.\n\nWe built Beetles AI to analyze compression footprints and metadata in 30 seconds, giving you court-ready probability report cards.\n\nCould I send over a 1-page sample report card to keep on file for trial exhibits?\n\nMaryam Rashid\nBeetles AI Forensics"
-    },
-    {
-        "name": "Johnny J. Urrutia",
-        "email": "jurrutialaw@gmail.com",
-        "hook": "Marine Corps background",
-        "subject": "quick question re: doctored voice notes in Austin hearings",
-        "body": "Johnny,\n\nIn South Austin criminal defense and high-conflict custody cases, hostile parties are increasingly using AI voice clones and edited text threads.\n\nBeetles AI verifies disputed audio clips and screenshots in 30 seconds, giving you an objective court-calibrated probability score.\n\nCan I email you a quick 1-page sample report card to keep on file for trial exhibits?\n\nMaryam Rashid\nBeetles AI Forensics"
-    }
-]
+QUEUE_FILE = "lead_queue.json"
 
-def update_queue():
-    queue_file = "lead_queue.json"
-    existing = []
-    if os.path.exists(queue_file):
-        with open(queue_file, "r") as f:
-            try:
-                existing = json.load(f)
-            except Exception:
-                existing = []
+
+def build_100m_offer_email(attorney_name: str, firm_name: str, city: str, county: str, niche_hook: str) -> dict:
+    """Dynamically generates $100M Hormozi Offer copy tailored to any Texas attorney."""
+    subject = f"quick question about disputed evidence in {county} County"
     
-    existing_emails = {item.get("email") for item in existing}
-    for lead in NEW_LEADS:
-        if lead["email"] not in existing_emails:
-            existing.append(lead)
+    body = f"""{attorney_name},
 
-    with open(queue_file, "w") as f:
-        json.dump(existing, f, indent=2)
-    print(f"Queue updated. Total leads in queue: {len(existing)}")
+{niche_hook}
+
+In high-conflict family and trial litigation in {county} County, opposing counsel frequently attempts to introduce manipulated text screenshots, cropped social media posts, or altered voice notes.
+
+Proving digital evidence is altered usually takes $3,500+ in expert witness fees and 3 weeks of discovery delay—far too slow for emergency temporary order hearings.
+
+We built Beetles AI to solve this in 30 seconds. Our forensic engine analyzes JPEG compression layers, Fourier spectral patterns, and EXIF metadata into a court-ready probability report card.
+
+The Offer: If {firm_name} has an active case right now with a disputed screenshot or voice note, email it over. We will run a complete forensic audit on your first exhibit free of charge so you can test the analysis live in court.
+
+If it does not give you immediate leverage with the judge, you owe us zero.
+
+Would you be against me sending over a 1-page sample forensic report card to see how the audit works?
+
+Maryam Rashid
+Beetles AI Forensics"""
+
+    return {
+        "subject": subject,
+        "body": body
+    }
+
+
+def add_leads_to_queue(raw_leads: list):
+    """
+    Appends raw attorney contacts into lead_queue.json.
+    Ensures no duplicate emails exist.
+    """
+    existing_queue = []
+    
+    if os.path.exists(QUEUE_FILE):
+        try:
+            with open(QUEUE_FILE, "r", encoding="utf-8") as f:
+                existing_queue = json.load(f)
+        except Exception:
+            existing_queue = []
+
+    existing_emails = {item.get("email", "").lower().strip() for item in existing_queue}
+    added_count = 0
+
+    for lead in raw_leads:
+        email = lead.get("email", "").lower().strip()
+        if not email or email in existing_emails:
+            continue
+
+        email_data = build_100m_offer_email(
+            attorney_name=lead.get("attorney_name", "Counsel"),
+            firm_name=lead.get("firm_name", "your firm"),
+            city=lead.get("city", "Texas"),
+            county=lead.get("county", "Texas"),
+            niche_hook=lead.get("niche_hook", "When clients face disputed digital evidence, unverified screenshots can derail a hearing before discovery opens.")
+        )
+
+        record = {
+            "id": len(existing_queue) + 1,
+            "attorney_name": lead.get("attorney_name"),
+            "email": email,
+            "firm_name": lead.get("firm_name"),
+            "city": lead.get("city"),
+            "county": lead.get("county"),
+            "subject": email_data["subject"],
+            "body": email_data["body"],
+            "status": "queued"  # 'queued' or 'sent'
+        }
+
+        existing_queue.append(record)
+        existing_emails.add(email)
+        added_count += 1
+
+    with open(QUEUE_FILE, "w", encoding="utf-8") as f:
+        json.dump(existing_queue, f, indent=2, ensure_ascii=False)
+
+    print(f"✅ Success: Added {added_count} new leads to {QUEUE_FILE}. Total leads: {len(existing_queue)}")
+
 
 if __name__ == "__main__":
-    update_queue()
+    # Add new target batches here as you find them (or via automated scraper)
+    BATCH = [
+        {
+            "attorney_name": "Donn Fullenweider",
+            "firm_name": "Fullenweider Wilite LLP",
+            "email": "info@fullenweider.com",
+            "city": "Houston",
+            "county": "Harris",
+            "niche_hook": "In high-net-worth family litigation in Harris County, opposing parties frequently attempt to introduce manipulated text screenshots or fabricated financial records to sway emergency rulings."
+        },
+        {
+            "attorney_name": "Lindsey Obenhaus",
+            "firm_name": "Goranson Bain Ausley",
+            "email": "contact@gbafamilylaw.com",
+            "city": "Dallas",
+            "county": "Dallas",
+            "niche_hook": "In complex Dallas custody disputes, unverified text screenshots and cropped audio notes often enter the record before discovery even opens."
+        },
+        {
+            "attorney_name": "Ike Vanden Eykel",
+            "firm_name": "KoonsFuller Family Law",
+            "email": "dallasinfo@koonsfuller.com",
+            "city": "Dallas",
+            "county": "Dallas",
+            "niche_hook": "Handling high-conflict divorce cases in Dallas requires shutting down unverified digital claims before they influence a judge's ruling."
+        }
+    ]
+    
+    add_leads_to_queue(BATCH)
