@@ -1,6 +1,8 @@
 """
-Beetles AI - Forensic Engine v2.4
+Beetles AI - Forensic Engine v2.5 (Multilingual CJK & Global Script Moat)
 Pure analysis functions. No Streamlit UI here.
+Integrated: ELA, 2D-FFT, EXIF Provenance, Gemini Multimodal,
+and Native Script Forensics for English, Arabic, Chinese (Hanzi), and Korean (Hangul).
 """
 
 from __future__ import annotations
@@ -63,7 +65,7 @@ def _to_100(score: Optional[float]) -> float:
 
 
 # -----------------------------
-# ELA
+# ELA (Error Level Analysis)
 # -----------------------------
 
 def perform_ela(img_bytes: bytes, quality: int = 90) -> Tuple[Optional[Image.Image], float]:
@@ -87,7 +89,6 @@ def perform_ela(img_bytes: bytes, quality: int = 90) -> Tuple[Optional[Image.Ima
         # Score: mean intensity of ELA map (higher = more re-compression / edit artifacts)
         arr = np.asarray(ela).astype(np.float32)
         mean_val = float(arr.mean())
-        # Map typical 0-40 mean into 0-100 suspicion
         score = max(0.0, min(100.0, (mean_val / 40.0) * 100.0))
         return ela, score
     except Exception:
@@ -95,7 +96,7 @@ def perform_ela(img_bytes: bytes, quality: int = 90) -> Tuple[Optional[Image.Ima
 
 
 # -----------------------------
-# FFT
+# FFT (2D Fast Fourier Transform)
 # -----------------------------
 
 def analyze_fft(img_bytes: bytes) -> Tuple[Optional[Image.Image], float]:
@@ -117,17 +118,15 @@ def analyze_fft(img_bytes: bytes) -> Tuple[Optional[Image.Image], float]:
         heat_arr = (mag_norm * 255.0).astype(np.uint8)
         heat_img = Image.fromarray(heat_arr).convert("RGB")
 
-        # Heuristic: strong mid-frequency peaks often indicate GAN/diffusion grid artifacts
+        # Heuristic: strong mid-frequency peaks indicate GAN/diffusion grid artifacts
         h, w = magnitude.shape
         cy, cx = h // 2, w // 2
-        # ring around center
         y, x = np.ogrid[:h, :w]
         r = np.sqrt((y - cy) ** 2 + (x - cx) ** 2)
         mask = (r > min(h, w) * 0.08) & (r < min(h, w) * 0.35)
         ring_mean = float(magnitude[mask].mean()) if mask.any() else 0.0
         global_mean = float(magnitude.mean())
         ratio = ring_mean / (global_mean + 1e-8)
-        # Map ratio ~1.0-1.8 → 0-100
         score = max(0.0, min(100.0, (ratio - 1.0) * 120.0))
         return heat_img, score
     except Exception:
@@ -135,7 +134,7 @@ def analyze_fft(img_bytes: bytes) -> Tuple[Optional[Image.Image], float]:
 
 
 # -----------------------------
-# Metadata
+# Metadata Signatures
 # -----------------------------
 
 def analyze_metadata_signatures(image: Image.Image) -> Dict[str, Any]:
@@ -176,7 +175,7 @@ def analyze_metadata_signatures(image: Image.Image) -> Dict[str, Any]:
 
 
 # -----------------------------
-# Gemini multimodal
+# Gemini Multimodal Core
 # -----------------------------
 
 def analyze_multimodal_gemini(
@@ -186,6 +185,7 @@ def analyze_multimodal_gemini(
     api_key: str,
 ) -> Tuple[float, Dict[str, Any]]:
     """
+    Multimodal visual and auditory forensic analysis via Gemini 1.5 Flash.
     Returns (ai_probability_0_to_100, report_dict).
     """
     if not _HAS_GENAI:
@@ -195,38 +195,39 @@ def analyze_multimodal_gemini(
 
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-2.0-flash")
+        model = genai.GenerativeModel("gemini-1.5-flash")
 
         if file_type == "image":
             prompt = (
-                "You are a digital forensics examiner. Analyze this image for AI generation or manipulation. "
+                "You are an expert digital forensics examiner. Analyze this image for AI generation, manipulation, or text forgery.\n"
+                "Pay strict attention to:\n"
+                "1. Lighting/shadow physics and texture continuity.\n"
+                "2. Multilingual text integrity (Latin kerning, Chinese Hanzi radicals, Korean Hangul syllabic blocks, Arabic ligatures).\n"
+                "3. Compression and pixel interpolation anomalies.\n"
                 "Return STRICT JSON only, no markdown, schema:\n"
-                "{"
-                '"ai_probability": <float 0-100>,'
-                '"summary": <string>,'
-                '"findings": [{"category": <string>, "evidence": <string>, "severity": <float 0-1>}]'
+                "{\n"
+                '  "ai_probability": <float 0-100>,\n'
+                '  "summary": <string>,\n'
+                '  "findings": [{"category": <string>, "evidence": <string>, "severity": <float 0-1>}]\n'
                 "}\n"
-                "Calibrate: 0=clearly authentic camera photo, 100=clearly AI/synthetic. "
-                "Use uncertainty; avoid absolute claims."
+                "Calibrate: 0=clearly authentic camera capture, 100=clearly AI synthetic. Avoid absolute binary claims."
             )
             img = Image.open(io.BytesIO(media_bytes)).convert("RGB")
             resp = model.generate_content([prompt, img])
         else:
             prompt = (
-                "You are an audio deepfake examiner. Analyze this audio for voice cloning / synthetic speech. "
+                "You are an audio deepfake examiner. Analyze this audio for voice cloning, speech synthesis, and phase distortion.\n"
                 "Return STRICT JSON only, no markdown, schema:\n"
-                "{"
-                '"ai_probability": <float 0-100>,'
-                '"summary": <string>,'
-                '"findings": [{"category": <string>, "evidence": <string>, "severity": <float 0-1>}]'
+                "{\n"
+                '  "ai_probability": <float 0-100>,\n'
+                '  "summary": <string>,\n'
+                '  "findings": [{"category": <string>, "evidence": <string>, "severity": <float 0-1>}]\n'
                 "}"
             )
-            # Upload bytes as inline part
             part = {"mime_type": mime_type, "data": media_bytes}
             resp = model.generate_content([prompt, part])
 
         text = (resp.text or "").strip()
-        # Strip code fences if model ignores instructions
         text = re.sub(r"^```(?:json)?\s*", "", text)
         text = re.sub(r"\s*```$", "", text)
         data = json.loads(text)
@@ -237,28 +238,26 @@ def analyze_multimodal_gemini(
         }
         return score, report
     except Exception as e:
-        return 50.0, {"summary": f"Gemini error: {e}", "findings": []}
+        return 50.0, {"summary": f"Gemini multimodal error: {e}", "findings": []}
 
 
-# -----------------------------
-# Arabic forensics
-# -----------------------------
+# -----------------------------------------------------------
+# Multilingual Script Forensics (Arabic, Chinese, Korean, Latin)
+# -----------------------------------------------------------
 
-_ARABIC_CHAR_RE = re.compile(r"[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]+")
-
-
-def detect_arabic_text(image: Image.Image, api_key: str = "") -> bool:
-    """Fast heuristic: if we later OCR via Gemini we refine. Placeholder pixel-agnostic gate."""
-    # Without local OCR, return False and let analyze_arabic_forensics do full check.
-    # Kept for API compatibility with older app imports.
-    return False
-
-
-def analyze_arabic_forensics(image: Image.Image, api_key: str) -> Dict[str, Any]:
+def analyze_multilingual_forensics(image: Image.Image, api_key: str) -> Dict[str, Any]:
     """
-    Arabic-aware layer via Gemini vision.
+    World-first quad-script forensic layer (Arabic, Chinese Hanzi, Korean Hangul, Latin/English).
+    Evaluates radical integrity, syllabic blocks, ligatures, and localized interface tampering.
     """
     empty = {
+        "text_detected": False,
+        "languages_detected": [],
+        "anomalies_found": [],
+        "manipulation_type": "none",
+        "script_confidence_score": 0,
+        "detail_notes": "",
+        # Backward-compatibility keys for Arabic UI
         "arabic_text_detected": False,
         "arabic_anomalies_found": [],
         "arabic_manipulation_type": "none",
@@ -270,75 +269,131 @@ def analyze_arabic_forensics(image: Image.Image, api_key: str) -> Dict[str, Any]
 
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-2.0-flash")
+        model = genai.GenerativeModel("gemini-1.5-flash")
+
         prompt = (
-            "Inspect this image for Arabic script and any signs it was faked/generated. "
-            "Look for: broken connected letters, wrong RTL flow, garbage tashkeel, "
-            "mixed fake fonts, template WhatsApp/Instagram Arabic UI forgeries, "
-            "character shape errors typical of diffusion models.\n"
-            "Return STRICT JSON only:\n"
-            "{"
-            '"arabic_text_detected": <bool>,'
-            '"arabic_anomalies_found": [<string>, ...],'
-            '"arabic_manipulation_type": "none"|"text_overlay"|"template_forgery"|"deepfake_subtitle"|"synthetic_document",'
-            '"arabic_confidence_score": <int 0-100>,'
-            '"arabic_detail_notes": <string>'
+            "You are a forensic document examiner specializing in Asian, Middle Eastern, and Western scripts.\n"
+            "Inspect this image for textual evidence manipulation across four language families:\n"
+            "1. ARABIC (RTL): Broken letter ligatures, reverse text direction, incorrect tashkeel, synthetic WhatsApp overlays.\n"
+            "2. CHINESE (Hanzi Simplified/Traditional): Hallucinated pseudo-characters, missing/merged radicals, incorrect stroke counts, WeChat/Weibo font anti-aliasing mismatches.\n"
+            "3. KOREAN (Hangul): Syllabic block misalignments (Choseong/Jungseong/Jongseong), irregular baseline spacing, KakaoTalk font forgeries.\n"
+            "4. LATIN/ENGLISH: Kerning collisions, font baseline shifts, localized bounding box haloing.\n\n"
+            "Return STRICT JSON only, no markdown, schema:\n"
+            "{\n"
+            '  "text_detected": <bool>,\n'
+            '  "languages_detected": ["arabic"|"chinese"|"korean"|"english", ...],\n'
+            '  "anomalies_found": [<string>, ...],\n'
+            '  "manipulation_type": "none"|"text_overlay"|"template_forgery"|"synthetic_script"|"glyph_hallucination",\n'
+            '  "script_confidence_score": <int 0-100>,\n'
+            '  "detail_notes": <string>\n'
             "}"
         )
+
         resp = model.generate_content([prompt, image.convert("RGB")])
         text = (resp.text or "").strip()
         text = re.sub(r"^```(?:json)?\s*", "", text)
         text = re.sub(r"\s*```$", "", text)
         data = json.loads(text)
+
+        langs = data.get("languages_detected", []) or []
+        anomalies = data.get("anomalies_found", []) or []
+        manip_type = data.get("manipulation_type", "none") or "none"
+        conf_score = int(_to_100(data.get("script_confidence_score", 0)))
+        notes = str(data.get("detail_notes", "") or "")
+        has_arabic = "arabic" in [l.lower() for l in langs]
+
         return {
-            "arabic_text_detected": bool(data.get("arabic_text_detected", False)),
-            "arabic_anomalies_found": data.get("arabic_anomalies_found", []) or [],
-            "arabic_manipulation_type": data.get("arabic_manipulation_type", "none") or "none",
-            "arabic_confidence_score": int(_to_100(data.get("arabic_confidence_score", 0))),
-            "arabic_detail_notes": str(data.get("arabic_detail_notes", "") or ""),
+            "text_detected": bool(data.get("text_detected", False)),
+            "languages_detected": langs,
+            "anomalies_found": anomalies,
+            "manipulation_type": manip_type,
+            "script_confidence_score": conf_score,
+            "detail_notes": notes,
+            # Backward-compatibility mappings
+            "arabic_text_detected": has_arabic,
+            "arabic_anomalies_found": anomalies if has_arabic else [],
+            "arabic_manipulation_type": manip_type if has_arabic else "none",
+            "arabic_confidence_score": conf_score if has_arabic else 0,
+            "arabic_detail_notes": notes,
         }
     except Exception as e:
-        empty["arabic_detail_notes"] = f"Arabic layer error: {e}"
+        empty["detail_notes"] = f"Multilingual script layer error: {e}"
+        empty["arabic_detail_notes"] = f"Script layer error: {e}"
         return empty
 
 
-def update_consensus_with_arabic(
+# Backward-compatible alias for existing imports
+def analyze_arabic_forensics(image: Image.Image, api_key: str) -> Dict[str, Any]:
+    """Backward-compatible wrapper for multilingual forensic audit."""
+    return analyze_multilingual_forensics(image, api_key)
+
+
+def detect_arabic_text(image: Image.Image, api_key: str = "") -> bool:
+    """Legacy helper preserved for backward compatibility."""
+    return False
+
+
+def analyze_cjk_forensics(image: Image.Image, api_key: str) -> Dict[str, Any]:
+    """Dedicated CJK (Chinese & Korean) forensic pass."""
+    res = analyze_multilingual_forensics(image, api_key)
+    cjk_langs = [l for l in res.get("languages_detected", []) if l.lower() in ("chinese", "korean")]
+    return {
+        "cjk_detected": len(cjk_langs) > 0,
+        "languages": cjk_langs,
+        "anomalies": res.get("anomalies_found", []),
+        "confidence": res.get("script_confidence_score", 0),
+        "notes": res.get("detail_notes", ""),
+    }
+
+
+# -----------------------------
+# Consensus Math
+# -----------------------------
+
+def update_consensus_with_multilingual(
     existing_scores: Dict[str, float],
-    arabic_results: Dict[str, Any],
+    script_results: Dict[str, Any],
 ) -> Dict[str, float]:
     """
-    Merge Arabic signal as 4th weight into consensus.
+    Merge Multilingual (Arabic/CJK/Latin) script signal as 4th weight into consensus.
     existing_scores keys: ela, fft, gemini (0-100).
     """
     ela = _to_100(existing_scores.get("ela"))
     fft = _to_100(existing_scores.get("fft"))
     gem = _to_100(existing_scores.get("gemini"))
-    ar = _to_100(arabic_results.get("arabic_confidence_score", 0))
+    script_conf = _to_100(
+        script_results.get("script_confidence_score", script_results.get("arabic_confidence_score", 0))
+    )
 
-    # If Arabic manipulation type is active, treat confidence as AI-suspicion contribution
-    manip = str(arabic_results.get("arabic_manipulation_type", "none"))
-    if manip == "none" or not arabic_results.get("arabic_text_detected"):
+    manip = str(script_results.get("manipulation_type", script_results.get("arabic_manipulation_type", "none")))
+    has_text = script_results.get("text_detected", script_results.get("arabic_text_detected", False))
+
+    if manip == "none" or not has_text:
         combined = compute_weighted_consensus(ela, fft, gem)
         return {
             "combined_score": float(combined["consensus_score"]),
             "confidence_margin": float(combined["uncertainty_margin"]),
         }
 
-    # Weights: ELA 25, FFT 25, Gemini 30, Arabic 20
-    combined_score = 0.25 * ela + 0.25 * fft + 0.30 * gem + 0.20 * ar
-    # Wider margin when signals disagree
-    vals = [ela, fft, gem, ar]
+    # Weights: ELA 25%, FFT 25%, Gemini Multimodal 30%, Script Anomaly 20%
+    combined_score = 0.25 * ela + 0.25 * fft + 0.30 * gem + 0.20 * script_conf
+    vals = [ela, fft, gem, script_conf]
     spread = max(vals) - min(vals)
     margin = max(8.0, min(25.0, spread * 0.25 + 5.0))
+
     return {
         "combined_score": float(max(0.0, min(100.0, combined_score))),
         "confidence_margin": float(margin),
     }
 
 
-# -----------------------------
-# Consensus
-# -----------------------------
+# Backward-compatible alias
+def update_consensus_with_arabic(
+    existing_scores: Dict[str, float],
+    arabic_results: Dict[str, Any],
+) -> Dict[str, float]:
+    return update_consensus_with_multilingual(existing_scores, arabic_results)
+
 
 def compute_weighted_consensus(
     ela_score: Optional[float],
@@ -352,20 +407,13 @@ def compute_weighted_consensus(
     ela = _to_100(ela_score)
     fft = _to_100(fft_score)
 
-    weights = []
-    values = []
-
-    # ELA + FFT always contribute if present
-    weights.append(0.30)
-    values.append(ela)
-    weights.append(0.30)
-    values.append(fft)
+    weights = [0.30, 0.30]
+    values = [ela, fft]
 
     if gemini_score is not None:
         weights.append(0.40)
         values.append(_to_100(gemini_score))
     else:
-        # Renormalize without gemini
         weights = [0.5, 0.5]
         values = [ela, fft]
 
@@ -374,7 +422,6 @@ def compute_weighted_consensus(
     consensus = sum(w * v for w, v in zip(weights, values))
 
     spread = max(values) - min(values) if values else 0.0
-    # If gemini missing, higher uncertainty
     base_margin = 12.0 if gemini_score is None else 8.0
     margin = max(base_margin, min(25.0, spread * 0.22 + base_margin))
 
