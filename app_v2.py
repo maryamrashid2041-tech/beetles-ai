@@ -75,21 +75,36 @@ st.markdown("""
     .badge-secure {
         background-color: #0e4429;
         color: #3fb950;
-        padding: 4px 8px;
+        padding: 6px 12px;
         border-radius: 4px;
         font-weight: 600;
-        font-size: 0.8rem;
+        font-size: 0.82rem;
+        display: inline-block;
+        margin-top: 5px;
     }
     .badge-alert {
         background-color: #490202;
         color: #ff7b72;
-        padding: 4px 8px;
+        padding: 6px 12px;
         border-radius: 4px;
         font-weight: 600;
-        font-size: 0.8rem;
+        font-size: 0.82rem;
+        display: inline-block;
+        margin-top: 5px;
     }
 </style>
 """, unsafe_allow_html=True)
+
+# -----------------------------
+# Silent Enterprise API Key Resolution
+# -----------------------------
+resolved_api_key = ""
+if "GEMINI_API_KEY" in st.secrets:
+    resolved_api_key = st.secrets["GEMINI_API_KEY"]
+elif "GEMINI_API_KEY" in os.environ:
+    resolved_api_key = os.environ["GEMINI_API_KEY"]
+elif "GEMINI_API_KEY" in st.session_state:
+    resolved_api_key = st.session_state["GEMINI_API_KEY"]
 
 # -----------------------------
 # Sidebar: Engine Configuration
@@ -108,14 +123,20 @@ selected_lang = st.sidebar.selectbox(
     ]
 )
 
-gemini_key_input = st.sidebar.text_input(
-    "Google Gemini API Key",
-    type="password",
-    value=st.session_state.get("GEMINI_API_KEY", os.environ.get("GEMINI_API_KEY", "")),
-    help="Required for Multimodal Deepfake & Multilingual Acoustic Consensus."
-)
-if gemini_key_input:
-    st.session_state["GEMINI_API_KEY"] = gemini_key_input
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 🛰️ Engine Infrastructure")
+if resolved_api_key:
+    st.sidebar.markdown(
+        '<span class="badge-secure">● Enterprise Node Connected</span>',
+        unsafe_allow_html=True
+    )
+    st.sidebar.caption("Full Multimodal & Acoustic Probes Active")
+else:
+    st.sidebar.markdown(
+        '<span class="badge-alert">○ Offline Mode (Local Probes Only)</span>',
+        unsafe_allow_html=True
+    )
+    st.sidebar.caption("Add GEMINI_API_KEY to Streamlit Secrets to activate neural probes.")
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🔒 Privacy Architecture")
@@ -126,6 +147,13 @@ if pro_mode:
     st.sidebar.caption("Files never leave the memory buffer. Source metadata stripped upon report rendering.")
 else:
     st.sidebar.warning("Standard Mode Active")
+
+# Hidden Developer Override Expander (For stealth local debugging)
+with st.sidebar.expander("⚙️ Developer Node Override", expanded=False):
+    dev_key = st.text_input("Custom Gemini Key", type="password", help="Leave blank to use default enterprise node.")
+    if dev_key:
+        resolved_api_key = dev_key
+        st.session_state["GEMINI_API_KEY"] = dev_key
 
 st.sidebar.markdown("---")
 st.sidebar.caption("“Beetles never leave the lab. We strip the fake — never your sources.”")
@@ -155,7 +183,7 @@ tab_image, tab_voice, tab_methodology = st.tabs([
     "🔬 Threat Intelligence & Methodology"
 ])
 
-api_key = st.session_state.get("GEMINI_API_KEY", "")
+api_key = resolved_api_key
 
 # ==============================================================================
 # TAB 1: IMAGE & DOCUMENT FORENSICS
@@ -179,9 +207,6 @@ with tab_image:
             st.image(pil_image, caption="Uploaded Artifact", use_container_width=True)
 
         if st.button("Run Multi-Signal Image Forensics", type="primary", use_container_width=True):
-            if not api_key:
-                st.warning("⚠️ Enter a Google Gemini API Key in the sidebar for full multimodal consensus. Running local signal passes only...")
-
             with st.spinner("Stripping compression artifacts, frequency residuals, and script geometry..."):
                 # 1. Local ELA Pass
                 ela_img, ela_score = fe.perform_ela(img_bytes)
@@ -312,7 +337,7 @@ with tab_voice:
 
         if st.button("Run Multilingual Voice Forensics", type="primary", use_container_width=True):
             if not api_key:
-                st.error("❌ Google Gemini API Key required for deep neural acoustic and phonetic analysis.")
+                st.error("❌ Enterprise neural node offline. Please configure GEMINI_API_KEY in Streamlit Secrets.")
             else:
                 with st.spinner(f"Stripping acoustic envelope & analyzing {selected_lang} phonemic boundaries..."):
                     report = fe.analyze_multilingual_audio_forensics(
