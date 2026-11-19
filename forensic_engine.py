@@ -1,8 +1,8 @@
 """
-Beetles AI - Forensic Engine v2.5 (Multilingual CJK & Global Script Moat)
+Beetles AI - Forensic Engine v2.6 (Multilingual Audio-Visual & Global Script Moat)
 Pure analysis functions. No Streamlit UI here.
-Integrated: ELA, 2D-FFT, EXIF Provenance, Gemini Multimodal,
-and Native Script Forensics for English, Arabic, Chinese (Hanzi), and Korean (Hangul).
+Integrated: ELA, 2D-FFT, EXIF Provenance, Multilingual Script Document Forensics,
+and Native Multilingual Audio/Voice Clone Forensics (Arabic, Cantonese/Mandarin, Urdu/Hindi, Korean, English).
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ except ImportError:
 
 
 # -----------------------------
-# Score helpers
+# Score Helpers
 # -----------------------------
 
 def _to_01(score: Optional[float]) -> float:
@@ -43,7 +43,7 @@ def _to_01(score: Optional[float]) -> float:
         s = float(score)
     except Exception:
         return 0.0
-    if s != s:
+    if s != s:  # NaN check
         return 0.0
     if s > 1.0:
         s = s / 100.0
@@ -57,11 +57,27 @@ def _to_100(score: Optional[float]) -> float:
         s = float(score)
     except Exception:
         return 0.0
-    if s != s:
+    if s != s:  # NaN check
         return 0.0
     if s <= 1.0:
         s = s * 100.0
     return max(0.0, min(100.0, s))
+
+
+def _get_gemini_model(api_key: str, preferred_prefix: str = "gemini-1.5-flash") -> Any:
+    """Helper to dynamically configure and discover available Gemini models to avoid 404/deprecated errors."""
+    if not _HAS_GENAI or not api_key:
+        return None
+    genai.configure(api_key=api_key)
+    try:
+        available = [m.name for m in genai.list_models() if "generateContent" in m.supported_generation_methods]
+        target = next((m for m in available if preferred_prefix in m), None)
+        if not target:
+            target = next((m for m in available if "gemini" in m), "models/gemini-1.5-flash")
+        clean_model_name = target.replace("models/", "")
+        return genai.GenerativeModel(clean_model_name)
+    except Exception:
+        return genai.GenerativeModel("gemini-1.5-flash")
 
 
 # -----------------------------
@@ -183,9 +199,10 @@ def analyze_multimodal_gemini(
     mime_type: str,
     file_type: str,
     api_key: str,
+    **kwargs: Any
 ) -> Tuple[float, Dict[str, Any]]:
     """
-    Multimodal visual and auditory forensic analysis via Gemini 1.5 Flash.
+    Multimodal visual and auditory forensic analysis via Gemini.
     Returns (ai_probability_0_to_100, report_dict).
     """
     if not _HAS_GENAI:
@@ -194,8 +211,9 @@ def analyze_multimodal_gemini(
         return 50.0, {"summary": "Missing API key", "findings": []}
 
     try:
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        model = _get_gemini_model(api_key, preferred_prefix="gemini-1.5-flash")
+        if not model:
+            return 50.0, {"summary": "Could not initialize Gemini model", "findings": []}
 
         if file_type == "image":
             prompt = (
@@ -242,12 +260,128 @@ def analyze_multimodal_gemini(
 
 
 # -----------------------------------------------------------
+# Multilingual Audio / Voice Clone Forensics (CJK, Arabic, Urdu, English)
+# -----------------------------------------------------------
+
+def analyze_multilingual_audio_forensics(
+    audio_bytes: bytes,
+    mime_type: str,
+    api_key: str,
+    target_language: str = "English"
+) -> Dict[str, Any]:
+    """
+    Language-Aware Acoustic Forensic Engine: Probes for synthesis artifacts unique
+    to English, Arabic, Cantonese/Mandarin, Urdu/Hindi, and Korean.
+    """
+    fallback_result = {
+        "ai_likelihood_score": 50,
+        "uncertainty_margin": 25,
+        "detected_language": target_language,
+        "linguistic_anomalies": ["Audio engine fallback triggered."],
+        "acoustic_artifacts": ["Inspect API key permissions or audio container codec."],
+        "forensic_summary": "Inconclusive acoustic telemetry.",
+        "verdict": "Indeterminate / Calibrated Uncertainty"
+    }
+
+    if not _HAS_GENAI or not api_key:
+        fallback_result["forensic_summary"] = "Gemini API key missing or SDK not installed."
+        return fallback_result
+
+    language_heuristics = {
+        "English": (
+            "Focus on robotic micro-jitter, synthetic vowel elongation, unnatural dynamic range compression, "
+            "and steep high-frequency roll-off typical of 16kHz/22kHz TTS models."
+        ),
+        "Arabic (العربية)": (
+            "CRITICAL: Scrutinize glottal stops, pharyngeal consonants (ع, ح, خ, ق), and emphatic consonant transitions. "
+            "AI voice models consistently introduce metallic ringing, phase smoothing, or unnatural pitch inflection across root-and-pattern structures."
+        ),
+        "Chinese / Cantonese (中文)": (
+            "CRITICAL: Perform tonal contour analysis. Mandarin (4 tones) and Cantonese (6-9 tones) require continuous "
+            "pitch-glide precision. Synthetic deepfake models (XTTS, VITS, Bark) consistently produce tonal drift, "
+            "micro-pitch flattening, or synthesized sibilant smearing during fast syllable transitions."
+        ),
+        "Urdu / Hindi (اردو)": (
+            "CRITICAL: Scrutinize retroflex consonants (ٹ, ڈ, ڑ), aspirated stops (بھ, پھ, تھ), and nasalized vowel endings. "
+            "AI speech synthesis tools consistently fail to simulate correct breath-release bursts and vocal tract turbulence on aspirated Urdu phonemes."
+        ),
+        "Korean (한국어)": (
+            "CRITICAL: Scrutinize three-way phonation contrast in stops (lenis/plain, aspirated, and fortis/tense consonants: ㅂ/ㅍ/ㅃ, ㄷ/ㅌ/ㄸ, ㄱ/ㅋ/ㄲ). "
+            "AI generators struggle with voice onset time (VOT) differences and unnatural honorific sentence-final cadence."
+        )
+    }
+
+    selected_heuristic = language_heuristics.get(target_language, language_heuristics["English"])
+
+    prompt = f"""
+    You are Beetles AI's Chief Multilingual Audio Forensics Examiner.
+    Target Language Profile: {target_language}
+
+    Forensic Directives for this profile:
+    {selected_heuristic}
+
+    Task:
+    Analyze this raw audio file for digital voice cloning, text-to-speech (TTS) synthesis, and AI face-swap voice conversions.
+    
+    Examine the following layers:
+    1. Phonemic & Acoustic Integrity: Are language-specific phonemes naturally produced with organic human vocal-tract turbulence?
+    2. Breathing & Prosody Cadence: Are physiological breath pauses authentic or mathematically timed/absent?
+    3. Spectral Artifacts: Is there phase cancellation, metallic robotic sheen, unnatural silence truncations, or vocoder harmonic distortion?
+    4. Forensic Verdict: Estimate the calibrated probability (0-100%) that this audio is an AI clone/synthetic voice.
+
+    Return your response strictly in valid JSON format, with no markdown fences:
+    {{
+        "ai_likelihood_score": <int between 0 and 100>,
+        "uncertainty_margin": <int between 5 and 20>,
+        "detected_language": "{target_language}",
+        "linguistic_anomalies": ["<anomaly 1>", "<anomaly 2>"],
+        "acoustic_artifacts": ["<artifact 1>", "<artifact 2>"],
+        "forensic_summary": "<concise 2-sentence breakdown>",
+        "verdict": "<High likelihood of AI clone / Calibrated uncertainty / High likelihood of authentic human speech>"
+    }}
+    """
+
+    try:
+        model = _get_gemini_model(api_key, preferred_prefix="gemini-1.5-flash")
+        if not model:
+            return fallback_result
+
+        audio_part = {
+            "mime_type": mime_type,
+            "data": audio_bytes
+        }
+
+        resp = model.generate_content([prompt, audio_part])
+        text = (resp.text or "").strip()
+        text = re.sub(r"^```(?:json)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+        data = json.loads(text)
+
+        score = int(_to_100(data.get("ai_likelihood_score", 50)))
+        margin = int(data.get("uncertainty_margin", 12))
+        margin = max(5, min(25, margin))
+
+        return {
+            "ai_likelihood_score": score,
+            "uncertainty_margin": margin,
+            "detected_language": data.get("detected_language", target_language),
+            "linguistic_anomalies": data.get("linguistic_anomalies", []) if isinstance(data.get("linguistic_anomalies"), list) else [],
+            "acoustic_artifacts": data.get("acoustic_artifacts", []) if isinstance(data.get("acoustic_artifacts"), list) else [],
+            "forensic_summary": data.get("forensic_summary", "Forensic acoustic analysis complete."),
+            "verdict": data.get("verdict", "Calibrated uncertainty")
+        }
+    except Exception as e:
+        fallback_result["forensic_summary"] = f"Acoustic analysis error: {str(e)}"
+        return fallback_result
+
+
+# -----------------------------------------------------------
 # Multilingual Script Forensics (Arabic, Chinese, Korean, Latin)
 # -----------------------------------------------------------
 
 def analyze_multilingual_forensics(image: Image.Image, api_key: str) -> Dict[str, Any]:
     """
-    World-first quad-script forensic layer (Arabic, Chinese Hanzi, Korean Hangul, Latin/English).
+    Quad-script document forensic layer (Arabic, Chinese Hanzi, Korean Hangul, Latin/English).
     Evaluates radical integrity, syllabic blocks, ligatures, and localized interface tampering.
     """
     empty = {
@@ -268,8 +402,9 @@ def analyze_multilingual_forensics(image: Image.Image, api_key: str) -> Dict[str
         return empty
 
     try:
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        model = _get_gemini_model(api_key, preferred_prefix="gemini-1.5-flash")
+        if not model:
+            return empty
 
         prompt = (
             "You are a forensic document examiner specializing in Asian, Middle Eastern, and Western scripts.\n"
@@ -322,7 +457,7 @@ def analyze_multilingual_forensics(image: Image.Image, api_key: str) -> Dict[str
         return empty
 
 
-# Backward-compatible alias for existing imports
+# Backward-compatible aliases
 def analyze_arabic_forensics(image: Image.Image, api_key: str) -> Dict[str, Any]:
     """Backward-compatible wrapper for multilingual forensic audit."""
     return analyze_multilingual_forensics(image, api_key)
@@ -387,7 +522,6 @@ def update_consensus_with_multilingual(
     }
 
 
-# Backward-compatible alias
 def update_consensus_with_arabic(
     existing_scores: Dict[str, float],
     arabic_results: Dict[str, Any],
@@ -407,12 +541,9 @@ def compute_weighted_consensus(
     ela = _to_100(ela_score)
     fft = _to_100(fft_score)
 
-    weights = [0.30, 0.30]
-    values = [ela, fft]
-
     if gemini_score is not None:
-        weights.append(0.40)
-        values.append(_to_100(gemini_score))
+        weights = [0.30, 0.30, 0.40]
+        values = [ela, fft, _to_100(gemini_score)]
     else:
         weights = [0.5, 0.5]
         values = [ela, fft]
